@@ -1,0 +1,4 @@
+frames/
+render.log
+sample_*.jpg
+__pycache__/
