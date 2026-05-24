@@ -1,4 +1,8 @@
 frames/
+overlay_frames/
+refframes/
 render.log
+overlay_render.log
 sample_*.jpg
+bg_test.jpg
 __pycache__/

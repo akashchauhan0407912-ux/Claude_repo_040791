@@ -5,7 +5,11 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 W, H = 1080, 1920
 FPS = 30
-OUT_DIR = os.path.join(os.path.dirname(__file__), "frames")
+OVERLAY_MODE = os.environ.get("OVERLAY_MODE", "0") == "1"
+OUT_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "overlay_frames" if OVERLAY_MODE else "frames",
+)
 os.makedirs(OUT_DIR, exist_ok=True)
 
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -395,29 +399,46 @@ TOTAL_FRAMES = int(TOTAL * FPS)
 
 def render_frame(idx):
     t = idx / FPS
-    img = make_background(idx, TOTAL_FRAMES)
-    # find scene
+    if OVERLAY_MODE:
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    else:
+        img = make_background(idx, TOTAL_FRAMES)
     for s, e, fn in SCENES:
         if s <= t < e:
             local_t = t - s
             dur = e - s
-            # crossfade at scene boundaries (0.4s)
             fade_in = ease_in_out(min(1, local_t / 0.4))
             fade_out = ease_in_out(min(1, (dur - local_t) / 0.4))
             scene_img = img.copy()
             fn(scene_img, local_t, dur, idx)
-            img = Image.blend(img, scene_img, min(fade_in, fade_out))
+            if OVERLAY_MODE:
+                # blend in alpha space
+                alpha_mul = min(fade_in, fade_out)
+                if alpha_mul < 1.0:
+                    r, g, b, a = scene_img.split()
+                    from PIL import ImageEnhance
+                    a = a.point(lambda v: int(v * alpha_mul))
+                    scene_img = Image.merge("RGBA", (r, g, b, a))
+                img = scene_img
+            else:
+                img = Image.blend(img, scene_img, min(fade_in, fade_out))
             break
-    vignette(img, 0.45)
-    grain(img, idx, amount=6)
+    if not OVERLAY_MODE:
+        vignette(img, 0.45)
+        grain(img, idx, amount=6)
     return img
 
 
 def main():
-    print(f"Rendering {TOTAL_FRAMES} frames at {FPS} fps ({TOTAL}s)…")
+    ext = "png" if OVERLAY_MODE else "jpg"
+    print(f"Rendering {TOTAL_FRAMES} frames at {FPS} fps ({TOTAL}s) overlay={OVERLAY_MODE}…")
     for i in range(TOTAL_FRAMES):
         img = render_frame(i)
-        img.save(os.path.join(OUT_DIR, f"f_{i:05d}.jpg"), quality=88)
+        path = os.path.join(OUT_DIR, f"f_{i:05d}.{ext}")
+        if OVERLAY_MODE:
+            img.save(path, optimize=False)
+        else:
+            img.save(path, quality=88)
         if i % 30 == 0:
             print(f"  {i}/{TOTAL_FRAMES}")
     print("done.")
